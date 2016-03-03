@@ -114,4 +114,7 @@ Performance Results
 
 The ``MyISAM`` engine performs better between the two options when doing a simple ``SELECT`` from the tables. However, with an increasing number of joins between the 10/20/50 partition scheme tested the amount of time taken increases considerably. This indicates that the fraction of time taken to do ``JOINs`` is very large in the overall computation of the query, which can be attributed to the Nested Loop Algorithm utilized by the engine. The ``InnoDB`` engine trails in performance for the simple ``SELECT`` query, but tends to do better with ``JOIN``. In particular, the 20-table ``JOIN`` and  1-column ``SELECT``  between the two engines seem to perform very similarly, beyond which ``InnoDB`` seems to perform better. While ``MyISAM`` can do a ``SELECT *`` for the 50-table join in ~40s but in ~35s for the 50-table 1-column test, the same is performed under ``InnoDB`` in ~44s and ~21s respectively. 
 
+Test Code
+=========
 
+The test code for this analysis can be found at the `GitHub repo <https://github.com/lsst-dm/dmtn-009/tree/master/_python>`_ of this note.
