@@ -41,6 +41,7 @@
 
 Tables like Object/Source are planned to be vertically partitioned into multiple tables during production. To understand how well MySQL can handle these vertical-partition joins, a study of splitting a wide table into multiple ones in different configurations can be done to measure performance.
 
+
 Test Setup Information
 ======================
 
@@ -62,6 +63,7 @@ The testing involves creating a wide table of 200 columns and timing the executi
 - Data inserted across all tables with the same order, but not sorted
 - ``key_buffer_size`` changed to 1024MB
 - Data fetched from memory and not from disk
+
 
 Timed Query Results for ``MyISAM`` Engine
 =========================================
@@ -86,6 +88,7 @@ The test query is timed in two configurations. For the wide table, all columns a
 +---------------------+---------------------------+---------------------------+---------------------------+
 Note: Scroll table right to see all columns.
 
+
 Timed Query Results for ``InnoDB`` Engine
 =========================================
 
@@ -109,12 +112,40 @@ Test query scheme for this engine is exactly the same as in the previous section
 +---------------------+---------------------------+---------------------------+---------------------------+
 Note: Scroll table right to see all columns.
 
+
 Performance Results
 ===================
 
 The ``MyISAM`` engine performs better between the two options when doing a simple ``SELECT`` from the tables. However, with an increasing number of joins between the 10/20/50 partition scheme tested the amount of time taken increases considerably. This indicates that the fraction of time taken to do ``JOINs`` is very large in the overall computation of the query, which can be attributed to the Nested Loop Algorithm utilized by the engine. The ``InnoDB`` engine trails in performance for the simple ``SELECT`` query, but tends to do better with ``JOIN``. In particular, the 20-table ``JOIN`` and  1-column ``SELECT``  between the two engines seem to perform very similarly, beyond which ``InnoDB`` seems to perform better. While ``MyISAM`` can do a ``SELECT *`` for the 50-table join in ~40s but in ~35s for the 50-table 1-column test, the same is performed under ``InnoDB`` in ~44s and ~21s respectively. 
 
-Test Code
-=========
 
-The test code for this analysis can be found at the `GitHub repo <https://github.com/lsst-dm/dmtn-009/tree/master/_python>`_ of this note.
+Query Optimization Tests
+=======================
+
+Potential improvements in query run times through optimization may be possible for these vertical partition joins. ``MySQL`` evaluates a number of possible plans depending on the type of query/joins. The amount of time spent by the query optimizer is directly proportional to the number of joins requested in the query, which can be a bottleneck to total query run times. It is possible to limit the number of options the optimizer evaluates by `tuning <https://dev.mysql.com/doc/refman/5.6/en/controlling-query-plan-evaluation.html>`_ the ``optimizer_search_depth`` parameter. In addition, when limiting this value, the query plan can change significantly to evaluate the order in which the joins are performed. This means there are potential improvements in both the query optimization step as well as the actual query execution time in the overall operation.
+
+
+Query Plan and Execution Time
+=============================
+
+Using the ``EXPLAIN`` function in ``MySQL`` it is possible to profile the query execution plan that is evaluated by the optimizer. The same queries that have been used in the tests of the previous sections were again executed as ``EXPLAIN SELECT ...`` but by using different values of the ``optimizer_search_depth`` parameter. The values used for the paramter are [0..10,20], where 0 instructs the optimizer to "auto-evaluate" the number of possibilities it should explore. These queries were then run on the 20-table join database across all columns on both the ``MyISAM`` and ``InnoDB`` engines. In addition, the queries were not cached by setting ``have_query_cache = NO`` and ``query_cache_size = 0`` respectively.
+
+The results of ``EXPLAIN`` on the queries indicate that the query optimization time is negligible in our table schema, of the order of a few milliseconds. The query plan deduced by the optimzer was found to be exactly the same irrespective of the value of ``optimizer_search_depth`` across all queries. Only one difference is observed, due to how the data is handled between engines. On the ``MyISAM`` engine, the query plan is a simple ``JOIN`` sequentially across the tables as ``T1.*, T2.*, ...T20.*``, i.e., in the order in which the query itself specifies the joins. However, because ``InnoDB`` stores its data differently using table spaces and internal row optimizations (established during the ``INSERT`` phase), the number of rows that the query optimzer sees for each table differs slightly (from the actual 100,000 that are supposed to be in each). As a result, the query plan from ``EXPLAIN`` shows that the join order is dictated by how many rows each table has, in ascending order, i.e., starting with the table with the fewest rows to the largest number of rows.
+
+Since the query optimization test shows the query plan to be static across all parametrizations, the run time for those queries also indicates that there are no performance improvements compared to results in the tables from previous sections. Performing a simple linear regression fit on the timings show further that there are no improvements to be had in either ``MyISAM`` or ``InnoDB`` using this method. Note the low run-time points in ``InnoDB`` are just fluctuations.
+
+.. figure:: /_static/querytime.png
+  :name: query20
+  :align: center
+ 
+  Total Query Execution Time for 20-table Join
+
+Query Optimization Results
+==========================
+
+The query planning time is negligible, and the run time does not improve due to the lack of change in the query plan prescribed by the optimizer. This suggests that for the type of queries being run for simple joins, this plan is already the most optimal. ``MySQL`` does not need to evaluate any further options beyond the obvious joining order for such simple cases, i.e., without ``WHERE`` clauses or complex ``JOIN`` predicates, and hence no improvments are achieved by changing the values of certain parameters. Since the test queries are constructed as a representation of the proposed joins for Object and Source tables, this test can accurately translate the performance of vertical partition joins.
+
+Test Code and Queries
+=====================
+
+The test code for this analysis can be found at the `GitHub repo <https://github.com/lsst-dm/dmtn-009/tree/master/_code>`_ of this note. The query templates used are also available at the same location.
